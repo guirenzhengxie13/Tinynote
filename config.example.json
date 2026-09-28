@@ -1,0 +1,34 @@
+{
+  "notes_dir": "notes",
+  "default_files": [
+    "随手记.md",
+    "灵感.md",
+    "待办.md"
+  ],
+  "newline_mode": "punctuation",
+  "idle_ms": 1200,
+  "autosave_ms": 180,
+  "opacity": 0.03,
+  "window_width": 320,
+  "context_chars": 4,
+  "hide_on_blur": true,
+  "global_hotkey": "Ctrl+Alt+A",
+  "hotkey_fallback": true,
+  "shortcuts": {
+    "next_file": "Tab",
+    "previous_file": "Shift+Tab",
+    "commit": "Return",
+    "hide": "Esc",
+    "review_previous": "Left",
+    "review_next": "Right",
+    "new_file": "Ctrl+N",
+    "open_folder": "Ctrl+O",
+    "open_file": "Ctrl+Shift+O",
+    "commands": "Ctrl+K",
+    "settings": "Ctrl+,",
+    "help": "F1",
+    "opacity": "F2",
+    "quit": "Ctrl+Q"
+  },
+  "plugins": []
+}
