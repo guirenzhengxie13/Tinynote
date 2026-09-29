@@ -97,20 +97,20 @@ class AppTests(unittest.TestCase):
         self.ime("下一行")
         self.assertEqual(self.contents(), "一行\n下一行\n")
 
-    def test_left_moves_real_cursor_and_shows_only_four_characters(self):
+    def test_both_arrows_keep_surrounding_context_visible(self):
         self.ime("今天去公园散步")
         QTest.keyClick(self.editor, Qt.Key.Key_Left)
         self.assertTrue(self.editor.revealed)
         self.assertEqual(self.editor.textCursor().position(), 6)
-        self.assertEqual(self.editor.visible_context(), "去公园散")
+        self.assertEqual(self.editor.visible_context(), "今天去公园散步")
         self.ime("慢")
         self.assertEqual(self.contents(), "今天去公园散慢步\n")
-        self.assertEqual(self.editor.visible_context(), "公园散慢")
+        self.assertEqual(self.editor.visible_context(), "今天去公园散慢步")
         self.assertTrue(self.editor.revealed)
         QTest.keyClick(self.editor, Qt.Key.Key_Right)
         self.assertEqual(self.editor.textCursor().position(), 8)
-        self.assertFalse(self.editor.revealed)
-        self.assertEqual(self.editor.visible_context(), "")
+        self.assertTrue(self.editor.revealed)
+        self.assertEqual(self.editor.visible_context(), "今天去公园散慢步")
 
     def test_left_can_edit_previous_saved_line(self):
         self.ime("第一行。第二行。")
@@ -118,16 +118,16 @@ class AppTests(unittest.TestCase):
             QTest.keyClick(self.editor, Qt.Key.Key_Left)
         self.ime("新")
         self.assertEqual(self.contents(), "第一行。\n第二新行。\n")
-        self.assertEqual(self.editor.visible_context(), "第二新")
+        self.assertEqual(self.editor.visible_context(), "第二新行。")
 
     def test_repeated_left_then_right_does_not_change_text(self):
         self.ime("一二三四五六")
         for _ in range(3):
             QTest.keyClick(self.editor, Qt.Key.Key_Left)
-        self.assertEqual(self.editor.visible_context(), "一二三")
+        self.assertEqual(self.editor.visible_context(), "一二三四五六")
         for _ in range(3):
             QTest.keyClick(self.editor, Qt.Key.Key_Right)
-        self.assertFalse(self.editor.revealed)
+        self.assertTrue(self.editor.revealed)
         self.assertEqual(self.editor.textCursor().position(), 6)
         self.assertEqual(self.contents(), "一二三四五六\n")
 
@@ -139,6 +139,114 @@ class AppTests(unittest.TestCase):
         from PySide6.QtCore import QEvent
         APP.sendEvent(self.window, QEvent(QEvent.Type.WindowDeactivate))
         self.assertFalse(self.editor.revealed)
+
+    def test_long_context_uses_width_and_keeps_caret_between_both_sides(self):
+        text = "甲" * 30 + "前文光标后文" + "乙" * 30
+        self.ime(text)
+        cursor = self.editor.textCursor()
+        cursor.setPosition(34)
+        self.editor.setTextCursor(cursor)
+        self.window.show()
+        APP.processEvents()
+        self.editor.set_revealed(True)
+        small = self.editor.visible_context()
+        self.assertIn("前文光标后文", small)
+        self.assertLess(len(small), len(text))
+        self.assertGreater(len(small), 4)
+        view = self.editor.line_view()
+        self.assertAlmostEqual(view.caret.center().x(), view.clip.center().x(), delta=2)
+        self.window.setFixedWidth(600)
+        APP.processEvents()
+        self.editor.set_revealed(True)
+        self.assertGreater(len(self.editor.visible_context()), len(small))
+        self.assertEqual(self.editor.toPlainText(), text)
+
+    def test_caret_stays_inside_frame_at_start_middle_and_end(self):
+        self.window.show()
+        APP.processEvents()
+        self.ime("甲乙丙丁" * 30)
+        self.editor.set_revealed(True)
+        for position in (0, 1, 60, 119, 120):
+            cursor = self.editor.textCursor()
+            cursor.setPosition(position)
+            self.editor.setTextCursor(cursor)
+            view = self.editor.line_view()
+            self.assertGreaterEqual(view.caret.left(), view.clip.left())
+            self.assertLessEqual(view.caret.right(), view.clip.right() + 0.01)
+
+    def test_right_from_hidden_reveals_and_moves(self):
+        self.ime("甲乙丙")
+        cursor = self.editor.textCursor()
+        cursor.setPosition(1)
+        self.editor.setTextCursor(cursor)
+        QTest.keyClick(self.editor, Qt.Key.Key_Right)
+        self.assertTrue(self.editor.revealed)
+        self.assertEqual(self.editor.textCursor().position(), 2)
+        self.assertEqual(self.editor.visible_context(), "甲乙丙")
+
+    def test_conceal_shortcut_keeps_window_cursor_and_document(self):
+        self.window.show()
+        self.ime("前面的文字后面的文字")
+        self.editor.move_cursor(-1)
+        position = self.editor.textCursor().position()
+        before = self.editor.toPlainText()
+        QTest.keyClick(self.editor, Qt.Key.Key_H, Qt.KeyboardModifier.ControlModifier)
+        self.assertFalse(self.editor.revealed)
+        self.assertEqual(self.editor.visible_context(), "")
+        self.assertEqual(self.editor.textCursor().position(), position)
+        self.assertEqual(self.editor.toPlainText(), before)
+        self.assertTrue(self.window.isVisible())
+        self.ime("新")
+        self.assertFalse(self.editor.revealed)
+        self.assertEqual(self.contents(), "前面的文字后面的文新字\n")
+
+    def test_conceal_during_ime_keeps_uncommitted_composition(self):
+        self.ime("甲乙")
+        self.editor.move_cursor(-1)
+        self.ime(preedit="xin")
+        QTest.keyClick(self.editor, Qt.Key.Key_H, Qt.KeyboardModifier.ControlModifier)
+        self.assertFalse(self.editor.revealed)
+        self.assertTrue(self.editor.composing)
+        self.assertEqual(self.contents(), "甲乙\n")
+        self.ime("新")
+        self.assertEqual(self.contents(), "甲新乙\n")
+        self.assertFalse(self.editor.revealed)
+
+    def test_ime_display_inserts_preedit_without_covering_suffix(self):
+        self.ime("前文后文")
+        self.editor.move_cursor(-1)
+        self.editor.move_cursor(-1)
+        self.ime(preedit="xin")
+        self.assertEqual(self.editor.line_view().text, "前文xin后文")
+        self.assertEqual(self.editor.visible_context(), "前文xin后文")
+        self.assertEqual(self.contents(), "前文后文\n")
+
+    def test_shift_arrows_keep_selection_visible_and_typing_replaces_it(self):
+        self.ime("甲乙丙丁")
+        QTest.keyClick(self.editor, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
+        QTest.keyClick(self.editor, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
+        self.assertTrue(self.editor.revealed)
+        self.assertEqual(self.editor.textCursor().selectedText(), "丙丁")
+        QTest.keyClick(self.editor, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
+        self.assertTrue(self.editor.revealed)
+        self.assertEqual(self.editor.textCursor().selectedText(), "丁")
+        self.ime("新")
+        self.assertEqual(self.contents(), "甲乙丙新\n")
+
+    def test_empty_line_navigation_remains_visible_until_concealed(self):
+        self.editor.move_cursor(-1)
+        self.assertTrue(self.editor.revealed)
+        self.assertEqual(self.editor.visible_context(), "")
+        self.assertGreater(self.editor.caret_rect().height(), 0)
+        self.editor.move_cursor(1)
+        self.assertTrue(self.editor.revealed)
+
+    def test_old_character_limit_config_is_ignored_and_shortcut_is_merged(self):
+        import json
+        (self.root / "config.json").write_text(json.dumps({"context_chars": 4, "shortcuts": {"hide": "Esc"}}), encoding="utf-8")
+        config = load_config(self.root)
+        self.assertNotIn("context_chars", config)
+        self.assertEqual(config["shortcuts"]["conceal"], "Ctrl+H")
 
     def test_punctuation_inserted_in_middle_keeps_suffix_and_cursor(self):
         self.ime("甲乙丙丁")
@@ -160,7 +268,7 @@ class AppTests(unittest.TestCase):
     def test_emoji_cursor_positions_do_not_split_unicode(self):
         self.ime("甲乙🙂丙丁")
         self.editor.move_cursor(-1)
-        self.assertEqual(self.editor.visible_context(), "甲乙🙂丙")
+        self.assertEqual(self.editor.visible_context(), "甲乙🙂丙丁")
         self.ime("新")
         self.assertEqual(self.contents(), "甲乙🙂丙新丁\n")
 
@@ -196,6 +304,20 @@ class AppTests(unittest.TestCase):
         APP.processEvents()
         hidden = self.editor.viewport().grab().toImage()
         self.assertEqual(blank, hidden)
+
+    def test_conceal_clears_rendered_context_and_selection(self):
+        self.window.show()
+        APP.processEvents()
+        blank = self.editor.viewport().grab().toImage()
+        self.ime("上下文与选区")
+        QTest.keyClick(self.editor, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
+        APP.processEvents()
+        visible = self.editor.viewport().grab().toImage()
+        self.assertNotEqual(blank, visible)
+        QTest.keyClick(self.editor, Qt.Key.Key_H, Qt.KeyboardModifier.ControlModifier)
+        APP.processEvents()
+        self.assertEqual(blank, self.editor.viewport().grab().toImage())
+        self.assertEqual(self.editor.textCursor().selectedText(), "区")
 
     def test_save_failure_prevents_switch_hide_or_quit(self):
         self.editor.insertPlainText("不能丢失")

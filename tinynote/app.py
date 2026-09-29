@@ -61,14 +61,14 @@ class NoteWindow(QWidget):
         self.file_button.clicked.connect(self.file_menu)
         self.file_button.setStyleSheet("QPushButton {color: rgba(170,200,185,170); background: transparent; border: none; padding: 0; font-size: 10px;}")
         layout.addWidget(self.file_button)
-        self.editor = HiddenEditor(context_chars=config["context_chars"])
+        self.editor = HiddenEditor()
         self.editor.replace_document(store.text)
         self.normalized_text = store.text
         layout.addWidget(self.editor, 1)
         self.status = QLabel("·")
         self.status.setFixedWidth(10)
         self.status.setStyleSheet("color: #86b39c; background: transparent;")
-        self.status.setToolTip("内容隐藏 · 左键查看光标前 4 字 · 右键隐藏")
+        self.status.setToolTip("内容隐藏 · 左右键显示上下文 · Ctrl+H 隐藏文字")
         layout.addWidget(self.status)
 
         self.save_timer = QTimer(self)
@@ -105,6 +105,7 @@ class NoteWindow(QWidget):
                 command.shortcut = canonical
                 self.bindings[canonical] = command.id
         self.editor.dispatch = self.dispatch
+        self.editor.conceal_shortcut = self.api.commands["conceal"].shortcut
         self.refresh_file()
 
     def register_commands(self):
@@ -112,8 +113,9 @@ class NoteWindow(QWidget):
             ("next_file", "下一份笔记", lambda: self.switch_file(1)),
             ("previous_file", "上一份笔记", lambda: self.switch_file(-1)),
             ("commit", "保存并换行", self.commit), ("hide", "保存并收起", self.hide_note),
-            ("review_previous", "光标左移，显示前 4 字", lambda: self.editor.move_cursor(-1)),
-            ("review_next", "光标右移，恢复隐藏", lambda: self.editor.move_cursor(1)),
+            ("review_previous", "光标左移，显示上下文", lambda: self.editor.move_cursor(-1)),
+            ("review_next", "光标右移，显示上下文", lambda: self.editor.move_cursor(1)),
+            ("conceal", "隐藏文字，保留光标位置", self.conceal_review),
             ("new_file", "新建 Markdown", self.new_file), ("open_folder", "打开笔记目录", self.open_folder),
             ("open_file", "打开当前 Markdown", self.open_file), ("commands", "全部命令", self.command_menu),
             ("settings", "偏好设置", self.settings), ("help", "快捷键帮助", self.help),
